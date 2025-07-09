@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "WebAI",
+  "name": "COPE",
   "version": "1.0.0",
-  "description": "A Chrome extension that adds a sidebar to the left side of the browser.",
+  "description": "Chat Observer and Performance Evaluator.",
   "permissions": [
     "activeTab",
     "scripting",

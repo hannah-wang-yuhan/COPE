@@ -17,9 +17,9 @@ export default function App() {
   
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ['executor.js'], // ⚠ 注意路径应和打包后结构一致
+        files: ['executor.js'], 
       }, () => {
-        console.log('✅ executor.js 已注入');
+        console.log('executor.js 已注入');
       });
     });
   };
@@ -29,9 +29,18 @@ export default function App() {
     injectExecutorScript();
   };
 
-  const handleStop = () => {
-    setRecord(false);
-  };
+const handleStop = () => {
+  setRecord(false);
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab?.id) return;
+
+    chrome.tabs.sendMessage(tab.id, { type: 'stopListening' }, () => {
+      console.log('已发送停止监听指令');
+    });
+  });
+};
+
 
   const handleExport = () => {
     console.log('导出');

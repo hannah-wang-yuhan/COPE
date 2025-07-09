@@ -22,6 +22,13 @@ export default function LabelConfig() {
                     showBehaviorFields={false}
                     required={false}
                 />
+                <MessageLabelBlock
+                    title="驻留"
+                    showLabelInput={false}
+                    showContentFields={false}
+                    showBehaviorFields={false}
+                    required={false}
+                />
 
             </div>
             <div className="form-section">
@@ -34,7 +41,7 @@ export default function LabelConfig() {
                     contentOptions={['时间戳', '文本']}
                     showBehaviorFields={true}
                     behaviorTitle="收集行为："
-                    behaviorOptions={['悬停', '点击', '复制', '滑动']}
+                    behaviorOptions={['悬停', '驻留', '点击', '复制']}
                     required={true}
                 />
 
@@ -46,7 +53,7 @@ export default function LabelConfig() {
                     contentOptions={['时间戳', '文本']}
                     showBehaviorFields={true}
                     behaviorTitle="收集行为："
-                    behaviorOptions={['悬停', '点击', '复制', '滑动']}
+                    behaviorOptions={['悬停', '驻留', '点击', '复制']}
                     required={true}
                 />
 

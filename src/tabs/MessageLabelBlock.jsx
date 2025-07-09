@@ -61,7 +61,7 @@ export default function MessageLabelBlock({
         </label>
         {collect && showLabelInput && (
           <label style={{ marginLeft: '16px' }}>
-            标签名：
+            selector：
             <input
               type="text"
               value={labelName}
