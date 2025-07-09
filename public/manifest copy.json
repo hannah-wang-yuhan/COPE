@@ -1,0 +1,68 @@
+{
+  "name": "Web Browser Recorder",
+  "version": "1.1",
+  "description": "Recorder/Replay module of WebAI. i.e. Smart Agent for Web Browser Automation.",
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "side_panel.html",
+    "default_title": "WebAI UI Events Recorder"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs",
+    "storage",
+    "sidePanel", 
+    "contextMenus",
+    "webRequest",
+    "downloads",
+    "webNavigation",
+    "notifications",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*", "<all_urls>", "file:///*"],
+  "action": {
+    "default_title": "WebAI Recorder",
+    "default_icon": {
+      "32": "icons/32.png",
+      "72": "icons/72.png",
+      "128": "icons/128.png",
+      "256": "icons/256.png",
+      "512": "icons/512.png"
+    },
+    "default_badge": {
+      "color": "#000000",
+      "text": ""
+    }
+  },
+  "icons": {
+    "32": "icons/32.png",
+    "72": "icons/72.png",
+    "128": "icons/128.png",
+    "256": "icons/256.png",
+    "512": "icons/512.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "match_about_blank": true,
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content.js"],
+      "matches": ["<all_urls>", "http://*/*", "https://*/*", "file:///*"]  
+    }
+  ]
+}

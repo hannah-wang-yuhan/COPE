@@ -1,0 +1,113 @@
+{
+    "id": "1",
+    "goal": "Search for keyword and get reviews from a specified website",
+    "type": "web_smart_rpa",
+    "inputs": {
+        "URL": {
+            "name": "URL",
+            "type": "string",
+            "value": "http://www.youtube.com",
+            "default": null,
+            "options": null,
+            "description": "The website to search for reviews"
+        },
+        "N_REVIEWS": {
+            "name": "N_REVIEWS",
+            "type": "int",
+            "value": 50,
+            "default": null,
+            "options": null,
+            "description": "Number of reviews to get for each search result page"
+        },
+        "USER_QUERY": {
+            "name": "USER_QUERY",
+            "type": "string",
+            "value": "Lenovo YOGA pro 9i",
+            "default": null,
+            "options": null,
+            "description": "Keyword for searching reviews"
+        },
+        "N_SEARCH_RESULTS": {
+            "name": "N_SEARCH_RESULTS",
+            "type": "int",
+            "value": 5,
+            "default": null,
+            "options": null,
+            "description": "Number of search results to consider"
+        }
+    },
+    "content": {
+        "steps": [
+            {
+                "URL": "%%URL%%",
+                "type": "tab_updated",
+                "value": "",
+                "selectors": [],
+                "urlTarget": ""
+            },
+            {
+                "URL": "%%URL%%",
+                "type": "click",
+                "value": "",
+                "selectors": [
+                    "#search-input > #search",
+                    "#q"
+                ],
+                "urlTarget": ""
+            },
+            {
+                "URL": "%%URL%%",
+                "type": "keydown",
+                "value": "Enter###%%USER_QUERY%%",
+                "selectors": [
+                    "#search-input > #search",
+                    "#q"
+                ],
+                "urlTarget": ""
+            },
+            {
+                "URL": "%%URL%%",
+                "type": "click",
+                "value": "搜索",
+                "selectors": [
+                    ".btn-search",
+                    "#start > #guide-button > #button"
+                ],
+                "urlTarget": ""
+            },
+            {
+                "URL": "",
+                "type": "get_search_results",
+                "value": "",
+                "nResults": "%%N_SEARCH_RESULTS%%",
+                "selectors": [
+                    ".style-scope:nth-child(2) > #contents > .style-scope:nth-child(1) > #dismissible #video-title > .style-scope:nth-child(2)",
+                    ".style-scope:nth-child(3) > #contents #title",
+                    ".ytd-item-section-renderer:nth-child(1) > #dismissible #video-title > .style-scope:nth-child(2)",
+                    ".style-scope:nth-child(1) > #contents > .style-scope:nth-child(1)"
+                ],
+                "urlTarget": ""
+            },
+            {
+                "URL": "",
+                "type": "get_results",
+                "value": "",
+                "nResults": "%%N_REVIEWS%%",
+                "selectors": [
+                    ".style-scope:nth-child(3) > #comment > #body > #main > #expander > #content .yt-core-attributed-string"
+                ],
+                "urlTarget": ""
+            }
+        ]
+    },
+    "outputs": {
+        "all_reviews": {
+            "name": "all_reviews",
+            "type": "json",
+            "value": null,
+            "default": null,
+            "options": null,
+            "description": "the reviews from the specified website"
+        }
+    }
+  }

@@ -1,0 +1,22 @@
+/* global.css */
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f7f8fa;
+    color: #333;
+  }
+  
+  button {
+    background-color: #3C3C3C;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    margin-right: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  button:hover {
+    background-color: #121212;
+  }
+  
