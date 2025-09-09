@@ -195,6 +195,7 @@
                         direction: finalDirection
                     };
 
+                    console.log('[ScrollSession]', payload);
                     scrollEvents.push(payload);
 
                     if (chrome?.runtime?.sendMessage) {
@@ -205,7 +206,9 @@
                 }
             }, 500);
         };
+
         el.addEventListener('scroll', scrollHandler, { passive: true });
+        console.log('[Executor] 滚动监听已挂载到容器', scrollSelector);
     }
 
     function scanAndObserve() {
@@ -232,6 +235,7 @@
         mutationObserver = new MutationObserver(scanAndObserve);
         mutationObserver.observe(document.body, { childList: true, subtree: true });
         scanAndObserve();
+        console.log('[Executor] 监听启动完成');
 
         if (!buttonClickHandler) {
             buttonClickHandler = (event) => {
@@ -310,7 +314,9 @@
                 buttons: elData.buttons || []
             };
         });
-
+        result.scroll = scrollEvents.slice();
+        
+        console.log('[行为数据收集完成]', result);
 
         const jsonStr = JSON.stringify(result, null, 2);
         const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -326,7 +332,7 @@
         observedElements.clear();
         isListening = false;
 
-        result.scroll = scrollEvents.slice();
+        
         scrollEvents = [];
 
         return result;
