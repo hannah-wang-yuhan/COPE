@@ -196,7 +196,6 @@ chrome.tabs.onRemoved.addListener(function(tabId, removeInfo) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'capturedData') {
-    // 转发给所有插件页面
     chrome.runtime.sendMessage({ type: 'updateData', payload: message.payload });
   }
 });

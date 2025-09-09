@@ -1,5 +1,5 @@
 /* eslint-disable no-undef */
-// Create sidebar container
+
 const sidebar = document.createElement('div');
 sidebar.id = 'mySidebar';
 sidebar.style.position = 'fixed';

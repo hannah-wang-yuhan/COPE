@@ -1,10 +1,19 @@
 (() => {
-    const selector = '.text-base.my-auto.mx-auto.py-5';
+    if (window.__COPE_EXEC_RUNNING__) {
+        return;
+    }
+    window.__COPE_EXEC_RUNNING__ = true;
+    const selector = '.text-base.my-auto.mx-auto';
+    const scrollSelector = '.flex.h-full.flex-col.overflow-y-auto';
     const observedElements = new Map();
     let mutationObserver = null;
     let isListening = false;
+    let scrollEl = null;
+    let scrollHandler = null;
+    let scrollEvents = [];
+    let ignoreNextScroll = false; 
+    let buttonClickHandler = null;
 
-    ////注入指令////
     function sendCapturedData(data) {
         if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
             chrome.runtime.sendMessage({ type: 'capturedData', payload: data });
@@ -13,16 +22,13 @@
         }
     }
 
-    ////防抖////
     function debounceSend(el, elData) {
         if (elData.timeoutId) clearTimeout(elData.timeoutId);
 
         elData.timeoutId = setTimeout(() => {
-            // 先检查文本是否为空，如果是，延迟重试（最多重试3次）
             if (!elData.lastText) {
                 elData.retryCount = (elData.retryCount || 0) + 1;
                 if (elData.retryCount <= 3) {
-                    // 重新取文本更新，再次调用 debounceSend 继续等待
                     elData.lastText = el.innerText.trim();
                     debounceSend(el, elData);
                     return;
@@ -39,12 +45,10 @@
         }, 2000);
     }
 
-    ////字典键生成////
     function generateMsgId(text, timestamp) {
         return 'msg_' + btoa(encodeURIComponent(text + timestamp)).slice(0, 8);
     }
 
-    ////元素观察函数////
     function observeElement(el) {
         if (observedElements.has(el)) return;
 
@@ -63,6 +67,8 @@
             hoverStartTime: null,
             copyCount: 0,
             copyDetails: [],
+            buttons: [],
+            index: null,
             msgId,
         };
         observedElements.set(el, elData);
@@ -78,26 +84,44 @@
         elData.mo = mo;
 
         el.addEventListener('click', () => {
-            elData.clickCount += 1;
+            elData.clickCount++;
+            if (chrome?.runtime?.sendMessage) {
+                chrome.runtime.sendMessage({
+                    type: 'messageClick',
+                    payload: {
+                        msgId: elData.msgId,
+                        index: elData.index,
+                        timestamp: new Date().toISOString()
+                    }
+                });
+            }
         });
-
         el.addEventListener('mouseenter', () => {
-            elData.hoverCount += 1;
+            elData.hoverCount++;
             elData.hoverStartTime = Date.now();
         });
-
         el.addEventListener('mouseleave', () => {
             if (elData.hoverStartTime) {
                 const duration = Date.now() - elData.hoverStartTime;
                 elData.hoverDuration += duration;
                 elData.hoverStartTime = null;
+                if (chrome?.runtime?.sendMessage) {
+                    chrome.runtime.sendMessage({
+                        type: 'messageHover',
+                        payload: {
+                            msgId: elData.msgId,
+                            index: elData.index,
+                            durationMs: duration,
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                }
             }
         });
-
-        el.addEventListener('copy', (e) => {
+        el.addEventListener('copy', () => {
             const copiedText = window.getSelection()?.toString().trim();
             if (copiedText) {
-                elData.copyCount += 1;
+                elData.copyCount++;
                 elData.copyDetails.push({
                     text: copiedText,
                     length: copiedText.length,
@@ -109,36 +133,163 @@
         debounceSend(el, elData);
     }
 
+    function tryAttachScrollListener() {
+        if (!isListening) return;
+        const el = document.querySelector(scrollSelector);
+        if (!el) return;
 
+        if (scrollEl && scrollHandler) scrollEl.removeEventListener('scroll', scrollHandler);
+        scrollEl = el;
+
+        let session = null;
+        let debounceTimer = null;
+
+        scrollHandler = () => {
+            if (ignoreNextScroll) {
+                ignoreNextScroll = false;
+                return;
+            }
+
+            const scrollTop = el.scrollTop || 0;
+            const scrollHeight = el.scrollHeight || 0;
+            const clientHeight = el.clientHeight || 0;
+            const maxScrollable = Math.max(1, scrollHeight - clientHeight);
+
+            let edge = "none";
+            if (scrollTop <= 0) edge = "top";
+            else if (scrollTop >= maxScrollable - 2) edge = "bottom";
+
+            if (!session) {
+                session = {
+                    startTime: new Date().toISOString(),
+                    startScrollTop: scrollTop,
+                    edge: edge,
+                    directions: new Set()
+                };
+            } else {
+                const delta = scrollTop - session.startScrollTop;
+                if (delta > 0) session.directions.add('down');
+                else if (delta < 0) session.directions.add('up');
+                if (edge !== "none") session.edge = edge;
+            }
+
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (session) {
+                    const endTime = new Date().toISOString();
+                    const endScrollTop = scrollTop;
+                    const distance = endScrollTop - session.startScrollTop;
+
+                    let finalDirection;
+                    if (session.directions.size === 1) finalDirection = [...session.directions][0];
+                    else if (session.directions.size > 1) finalDirection = 'mixed';
+                    else finalDirection = 'none';
+
+                    const payload = {
+                        startTime: session.startTime,
+                        endTime,
+                        startScrollTop: session.startScrollTop,
+                        endScrollTop,
+                        distance,
+                        edge: session.edge,
+                        direction: finalDirection
+                    };
+
+                    scrollEvents.push(payload);
+
+                    if (chrome?.runtime?.sendMessage) {
+                        chrome.runtime.sendMessage({ type: 'scrollSession', payload });
+                    }
+
+                    session = null;
+                }
+            }, 500);
+        };
+        el.addEventListener('scroll', scrollHandler, { passive: true });
+    }
 
     function scanAndObserve() {
+        if (!isListening) return;
         const elements = document.querySelectorAll(selector);
         elements.forEach(el => {
             if (!observedElements.has(el)) {
                 observeElement(el);
+                ignoreNextScroll = true;
             }
         });
+
+        elements.forEach((el, i) => {
+            const data = observedElements.get(el);
+            if (data) data.index = i + 1;
+        });
+
+        tryAttachScrollListener();
     }
 
-    ////对消息的行为指标////
-
-    ////起止状态控制，结果输出////
     function startListening() {
         if (isListening) return;
+        isListening = true;
         mutationObserver = new MutationObserver(scanAndObserve);
         mutationObserver.observe(document.body, { childList: true, subtree: true });
         scanAndObserve();
-        isListening = true;
-        console.log('[Executor] 监听启动完成');
+
+        if (!buttonClickHandler) {
+            buttonClickHandler = (event) => {
+                const button = event.target.closest('button');
+                if (!button) return;
+
+                const msgEl = button.closest(selector);
+                if (!msgEl) return;
+
+                if (!observedElements.has(msgEl)) {
+                    observeElement(msgEl);
+                }
+
+                const elData = observedElements.get(msgEl);
+                if (!elData) return;
+
+                const name = button.getAttribute('aria-label')
+                    || button.getAttribute('data-testid')
+                    || button.innerText?.trim()
+                    || 'unknown';
+
+                if (!elData.buttons) elData.buttons = [];
+                elData.buttons.push({
+                    name,
+                    timestamp: new Date().toISOString()
+                });
+
+                elData.clickCount = (elData.clickCount || 0) + 1;
+                if (chrome?.runtime?.sendMessage) {
+                    chrome.runtime.sendMessage({
+                        type: 'buttonClick',
+                        payload: {
+                            msgId: elData.msgId,
+                            index: elData.index,
+                            name,
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                }
+            };
+            document.addEventListener('click', buttonClickHandler, true);
+        }
     }
 
     function stopListening() {
         if (!isListening) return {};
-    
+
         if (mutationObserver) mutationObserver.disconnect();
-    
+        if (scrollEl && scrollHandler) scrollEl.removeEventListener('scroll', scrollHandler);
+        scrollEl = null;
+        scrollHandler = null;
+        if (buttonClickHandler) {
+            document.removeEventListener('click', buttonClickHandler, true);
+        }
+        buttonClickHandler = null;
+
         const result = {};
-    
+
         observedElements.forEach((elData, el) => {
             if (elData.mo) elData.mo.disconnect();
             if (elData.timeoutId) clearTimeout(elData.timeoutId);
@@ -146,61 +297,55 @@
                 elData.hoverDuration += Date.now() - elData.hoverStartTime;
                 elData.hoverStartTime = null;
             }
-    
+
             result[elData.msgId] = {
+                index: elData.index,
                 text: elData.lastText,
                 time_stamp: elData.firstSeen.toISOString(),
                 count_num: elData.clickCount || 0,
                 hover_count: elData.hoverCount || 0,
                 hover_duration_ms: elData.hoverDuration || 0,
                 copy_count: elData.copyCount || 0,
-                copy_details: elData.copyDetails || []
+                copy_details: elData.copyDetails || [],
+                buttons: elData.buttons || []
             };
         });
-    
-        console.log('[行为数据收集完成]', result);
-    
-        // 生成 JSON 字符串
+
+
         const jsonStr = JSON.stringify(result, null, 2);
-        // 创建一个 Blob 对象
         const blob = new Blob([jsonStr], { type: 'application/json' });
-        // 创建一个临时 URL
         const url = URL.createObjectURL(blob);
-        // 创建一个隐藏的下载链接
         const a = document.createElement('a');
         a.href = url;
         a.download = `behavior_data_${new Date().toISOString()}.json`;
         document.body.appendChild(a);
         a.click();
-        // 释放 URL 对象
         URL.revokeObjectURL(url);
-        // 移除链接
         document.body.removeChild(a);
-    
+
         observedElements.clear();
         isListening = false;
-    
-        return result; // 返回数据字典
-    }
-    
 
+        result.scroll = scrollEvents.slice();
+        scrollEvents = [];
+
+        return result;
+    }
 
     window.addEventListener('unload', () => {
-        stopListening();
+        try { stopListening(); } finally { window.__COPE_EXEC_RUNNING__ = false; }
     });
 
     startListening();
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === 'stopListening') {
-            const result = stopListening(); // 获取数据
-            sendResponse(result);           // 正确返回数据
-            return true;                    // 告诉浏览器这是一条异步消息
+            const result = stopListening();
+            sendResponse(result);
+            window.__COPE_EXEC_RUNNING__ = false;
+            return true;
         }
-
         return false;
     });
-
-
 
 })();

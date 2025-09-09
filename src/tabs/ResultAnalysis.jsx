@@ -4,17 +4,30 @@ export default function ResultAnalysis() {
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
+    if (window.chrome?.storage?.local) {
+      chrome.storage.local.get(['cope_messages'], res => {
+        if (Array.isArray(res?.cope_messages)) {
+          setMessages(res.cope_messages);
+        }
+      });
+    }
+
+    if (!window.chrome?.runtime?.onMessage) return;
+
     function handleMessage(message) {
       if (message.type === 'updateData') {
-        setMessages(prev => [...prev, ...message.payload]);
+        setMessages(prev => {
+          const next = [...prev, ...message.payload];
+          if (window.chrome?.storage?.local) {
+            chrome.storage.local.set({ cope_messages: next });
+          }
+          return next;
+        });
       }
     }
 
     chrome.runtime.onMessage.addListener(handleMessage);
-
-    return () => {
-      chrome.runtime.onMessage.removeListener(handleMessage);
-    };
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
   }, []);
 
   const truncate = (text, maxLength = 100) => {
