@@ -16,14 +16,13 @@ The plugin records both **message-level** and **global-level** interaction data:
   - Click events  
   - Hover events  
   - Button clicks (e.g., regenerate, copy, etc.)  
-  - History navigation  
+  - History  
 
 - **Global-level metrics:**
   - Scroll behavior  
   - Global button clicks  
-  - Interaction events such as switching between messages, regenerating responses, etc.  
-
-In short, the plugin provides a **comprehensive log of user interactions** (click, hover, scroll, regenerate, navigation) when engaging in conversational retrieval with LLMs.
+  
+In short, the plugin provides a **comprehensive log of user interactions** (click, hover, scroll, regenerate, etc.) when engaging in conversational retrieval with LLMs.
 
 ---
 
