@@ -1,65 +1,103 @@
-# 初始化项目
+# LLM-based Conversational Retrieval Evaluation Plugin
 
-cd <根目录路径>
+This Chrome extension plugin is designed for **online evaluation of LLM-based conversational retrieval systems**.  
+It automatically collects interaction metrics during user conversations with LLMs (currently adapted for the ChatGPT web interface).
 
-npm install
+---
 
-npm run build 
+## 🔹 Features
 
-(生成dist文件夹，在 “chrome浏览器 -- 扩展程序 -- 管理扩展成程序 -- 加载未打包的扩展程序” 中，选择 dist 文件地址，打开，即可调试插件)
+The plugin records both **message-level** and **global-level** interaction data:
 
-# 插件使用
+- **Message-level metrics (per message):**
+  - Message content  
+  - Timestamp  
+  - Message index in the conversation  
+  - Click events  
+  - Hover events  
+  - Button clicks (e.g., regenerate, copy, etc.)  
+  - History navigation  
 
-本插件目前在开发阶段，仅支持 ChatGPT 平台内对话与时间戳爬取展示，使用步骤如下：
+- **Global-level metrics:**
+  - Scroll behavior  
+  - Global button clicks  
+  - Interaction events such as switching between messages, regenerating responses, etc.  
 
-1. 在扩展程序中找到插件，点击“···”，选择“打开侧边栏”；
+In short, the plugin provides a **comprehensive log of user interactions** (click, hover, scroll, regenerate, navigation) when engaging in conversational retrieval with LLMs.
 
-2. 点击开始，切换到“结果分析”栏目；
+---
 
-3. 此时可在插件页面上观察到历史对话记录与新对话记录。
+## 🔹 Installation & Usage
 
-！！ 请注意，为了获取消息发出的真实时间，并高效率地获取完整对话内容，这里进行缓冲存储 + 防抖的操作，即获取消息的时间戳取自消息标签产生的时间，消息的内容取自消息标签稳定的时刻，因此，在获取新记录时，如有延迟，实属正常。
+1. **Initialize the project**
 
-！！ 请注意，在每次结束调试后，最好在扩展程序内关闭该插件，防止影响浏览器性能和 ChatGPT 的使用。
+   ```bash
+   cd <root-directory>
+   npm install
+   npm run build
 
-# 数据格式 （目前收集：消息容器行为指标,包括消息文本、时间戳，以及点击、悬浮、复制指标）
+2. **Load the plugin in Chrome**
+  Open **chrome://extensions/** */
+  Enable Developer Mode (top-right corner)
+  Click Load unpacked
+  Select the **dist folder** generated after the build
 
+  The plugin is now ready for debugging and usage!
+
+---
+
+## 🔹 Data Format
+
+The plugin collects data in structured **JSON** format. The schema is as follows:
+
+```json
 {
+  //Messages
+  "1": [
+    //History
+    {
+      "msg_1757506394344_w816xn7e": {
+      "id": "",
+      "role": "",
+      "text": "",
+      "timestamp": "",
+      "count_num": 0,
+      "hover_count": 0,
+      "hover_duration_ms": 0,
+      "copy_count": 0,
+      "copy_details": [
+        {
+          "text": "",
+          "length": 0,
+          "timestamp": ""
+        }
+      ],
+      "buttons": [
+        {
+          "name": "",
+          "timestamp": ""
+        }
+      ]
+    }}],
 
-msg_id: {
-
-    "text": "",
-    
-    "time_stamp": "2025-07-09T08:10:51.849Z",
-    
-    "count_num": ,
-    
-    
-    "hover_count": ,
-    
-    "hover_duration_ms": ,
-    
-    "copy_count": ,
-    
-    "copy_details": [
-    
-      {"text": "",
-      
-        "length": ,
-        
-        "timestamp": "2025-07-09T08:11:01.456Z"},
-    
-    ]
+  ///Overall: Scroll
+  "scroll": [
+    {
+      "startTime": "",
+      "endTime": "",
+      "startScrollTop": 0,
+      "endScrollTop": 0,
+      "distance": 0,
+      "edge": "", // bottom | top | none
+      "direction": "" // down | up | mixed
+    }
+  ],
   
-  },
-
+  //Overall: Button
+  "overallButton": [
+    {
+      "name": "",
+      "timestamp": ""
+    }
+  ]
 }
-
-# React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
