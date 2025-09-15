@@ -8,7 +8,6 @@
     "scripting",
     "tabs",
     "storage",
-    "sidePanel", 
     "contextMenus",
     "webRequest",
     "downloads",
@@ -21,11 +20,6 @@
   "host_permissions": ["http://*/*", "https://*/*", "<all_urls>", "file:///*"],
     "background": {
     "service_worker": "background.js"
-  },
-
-  "side_panel": {
-    "default_path": "index.html",
-    "openPanelOnActionClick": true
   },
   "content_scripts": [
     {

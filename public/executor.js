@@ -2,6 +2,154 @@
     if (window.__COPE_EXEC_RUNNING__) return;
     window.__COPE_EXEC_RUNNING__ = true;
   
+    // 注入UI
+    function injectFloatingPanel() {
+      console.log("injectFloatingPanel");
+      if (document.getElementById("cope-floating-panel")) return; 
+  
+      const panel = document.createElement("div");
+      panel.id = "cope-floating-panel";
+      panel.innerHTML = `
+        <button id=\"cope-close-btn\" title=\"关闭\" style=\"position:absolute;right:-4px;top:-4px;width:15px;height:15px;border:none;background:transparent;color:#333;font-size:12px;cursor:pointer;line-height:12px\">×</button>
+        <div id=\"cope-round-btn\" style=\"width:100px;height:100px;border-radius:50%;border:1px solid #a7a6cb;background:linear-gradient(#a7a6cb 0 28%, #e6e9f0 28% 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,0.2);cursor:pointer;user-select:none\">
+          <div id=\"cope-title\" style=\"font-size:20px;font-weight:700;color:#111;text-shadow:0 2px 2px rgba(0,0,0,.2);margin-top:12px\">Start</div>
+          <div id=\"cope-sub\" style=\"margin-top:6px;font-size:10px;color:#222\">点击开始监听</div>
+        </div>
+      `;
+  
+      // 右下角固定
+      Object.assign(panel.style, {
+        position: "fixed",
+        bottom: "10px",
+        right: "10px",
+        width: "120px",
+        height: "110px",
+        zIndex: 999999,
+        background: "transparent",
+        fontFamily: "Arial, sans-serif"
+      });
+      console.log("panel", panel);
+      document.body.appendChild(panel);
+      // 尝试恢复历史位置
+      loadPosition();
+  
+      const closeBtn = document.getElementById("cope-close-btn");
+      const roundBtn = document.getElementById("cope-round-btn");
+      const titleEl = document.getElementById("cope-title");
+      const subEl = document.getElementById("cope-sub");
+      roundBtn.style.transition = 'transform 180ms ease, background 180ms ease';
+      roundBtn.style.cursor = 'grab';
+
+      // 拖拽与位置持久化
+      const POS_KEY = '__cope_panel_pos__';
+      function savePosition(left, top) {
+        try { localStorage.setItem(POS_KEY, JSON.stringify({ left, top })); } catch (_) {}
+      }
+      function loadPosition() {
+        try {
+          const raw = localStorage.getItem(POS_KEY);
+          if (!raw) return;
+          const { left, top } = JSON.parse(raw);
+          if (Number.isFinite(left) && Number.isFinite(top)) {
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+            panel.style.right = '';
+            panel.style.bottom = '';
+          }
+        } catch (_) {}
+      }
+
+      function setBaseBackground(lightColor = '#e6e9f0') {
+        roundBtn.style.background = `linear-gradient(#a7a6cb 0 28%, ${lightColor} 28% 100%)`;
+      }
+
+      function setStartUI() {
+        titleEl.textContent = 'Start';
+        subEl.textContent = '点击开始监听';
+        setBaseBackground('#e6e9f0');
+      }
+
+      function setFinishUI() {
+        titleEl.textContent = 'Finish';
+        subEl.textContent = '进行中，点击结束';
+        setBaseBackground('#e6e9f0');
+      }
+
+      roundBtn.addEventListener('mouseenter', () => {
+        setBaseBackground('#dad4ec');
+        roundBtn.style.transform = 'translateY(-1px) scale(1.04)';
+      });
+      roundBtn.addEventListener('mouseleave', () => {
+        setBaseBackground('#e6e9f0');
+        roundBtn.style.transform = 'translateY(0) scale(1)';
+      });
+
+      // 鼠标/触控拖拽
+      let dragging = false;
+      let dragMoved = false;
+      let lastDragEndAt = 0;
+      let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+      function beginDrag(clientX, clientY) {
+        dragging = true;
+        dragMoved = false;
+        roundBtn.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+        const rect = panel.getBoundingClientRect();
+        panel.style.left = rect.left + 'px';
+        panel.style.top = rect.top + 'px';
+        panel.style.right = '';
+        panel.style.bottom = '';
+        startX = clientX; startY = clientY;
+        startLeft = rect.left; startTop = rect.top;
+      }
+      function moveDrag(clientX, clientY) {
+        if (!dragging) return;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+        if (!dragMoved && Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+        const maxLeft = window.innerWidth - panel.offsetWidth;
+        const maxTop = window.innerHeight - panel.offsetHeight;
+        let nextLeft = Math.min(Math.max(0, startLeft + dx), Math.max(0, maxLeft));
+        let nextTop = Math.min(Math.max(0, startTop + dy), Math.max(0, maxTop));
+        panel.style.left = nextLeft + 'px';
+        panel.style.top = nextTop + 'px';
+      }
+      function endDrag() {
+        if (!dragging) return;
+        dragging = false;
+        roundBtn.style.cursor = 'grab';
+        document.body.style.userSelect = '';
+        const rect = panel.getBoundingClientRect();
+        savePosition(rect.left, rect.top);
+        if (dragMoved) {
+          lastDragEndAt = Date.now();
+        }
+      }
+      // 事件绑定
+      roundBtn.addEventListener('mousedown', (e) => { beginDrag(e.clientX, e.clientY); });
+      window.addEventListener('mousemove', (e) => { moveDrag(e.clientX, e.clientY); });
+      window.addEventListener('mouseup', endDrag);
+      roundBtn.addEventListener('touchstart', (e) => { const t = e.touches[0]; beginDrag(t.clientX, t.clientY); }, { passive: true });
+      window.addEventListener('touchmove', (e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); }, { passive: false });
+      window.addEventListener('touchend', endDrag);
+
+      closeBtn?.addEventListener("click", () => { panel.remove(); });
+      roundBtn?.addEventListener("click", (ev) => {
+        try {
+          if (Date.now() - lastDragEndAt < 250) { ev.preventDefault(); ev.stopPropagation(); return; }
+          if (!isListening) {
+            startListening();
+            setFinishUI();
+          } else {
+            stopListening();
+            setStartUI();
+          }
+        } catch (e) {}
+      });
+
+      setStartUI();
+    }
+  
     const selector = '.text-base.my-auto.mx-auto';
     const scrollSelector = '.flex.h-full.flex-col.overflow-y-auto';
     const observedElements = new Map();
@@ -341,7 +489,8 @@
   
     window.addEventListener('unload', () => { try { stopListening(); } finally { window.__COPE_EXEC_RUNNING__ = false; } });
   
-    startListening();
+    // 注入面板（手动开始/结束）
+    try { injectFloatingPanel(); } catch (e) {}
   
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'stopListening') {
