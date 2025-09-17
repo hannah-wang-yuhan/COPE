@@ -4,7 +4,6 @@
   
     // 注入UI
     function injectFloatingPanel() {
-      console.log("injectFloatingPanel");
       if (document.getElementById("cope-floating-panel")) return; 
   
       const panel = document.createElement("div");
@@ -28,7 +27,7 @@
         background: "transparent",
         fontFamily: "Arial, sans-serif"
       });
-      console.log("panel", panel);
+      
       document.body.appendChild(panel);
       // 尝试恢复历史位置
       loadPosition();
@@ -40,7 +39,7 @@
       roundBtn.style.transition = 'transform 180ms ease, background 180ms ease';
       roundBtn.style.cursor = 'grab';
 
-      // 拖拽与位置持久化
+    
       const POS_KEY = '__cope_panel_pos__';
       function savePosition(left, top) {
         try { localStorage.setItem(POS_KEY, JSON.stringify({ left, top })); } catch (_) {}
@@ -125,7 +124,7 @@
           lastDragEndAt = Date.now();
         }
       }
-      // 事件绑定
+      
       roundBtn.addEventListener('mousedown', (e) => { beginDrag(e.clientX, e.clientY); });
       window.addEventListener('mousemove', (e) => { moveDrag(e.clientX, e.clientY); });
       window.addEventListener('mouseup', endDrag);
@@ -163,6 +162,24 @@
     let overallButtons = [];
     let ignoreNextScroll = false;
     let buttonClickHandler = null;
+
+ 
+  function getFilteredInnerText(root) {
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let text = '';
+      let node;
+      while ((node = walker.nextNode())) {
+        const parent = node.parentElement;
+        if (!parent) continue;
+        if (parent.closest('textarea,button')) continue;
+        text += node.nodeValue || '';
+      }
+      return text.replace(/\s+/g, ' ').trim();
+    } catch (_) {
+      return (root.innerText || '').trim();
+    }
+  }
   
     function sendCapturedData(data) {
       if (chrome?.runtime?.sendMessage) {
@@ -197,7 +214,6 @@
         hoverCount: 0,
         hoverDuration: 0,
         hoverStartTime: null,
-        copyCount: 0,
         copyDetails: [],
         buttons: [],
         index: null,
@@ -209,10 +225,14 @@
       observedElements.set(el, elData);
   
      
-      const mo = new MutationObserver(() => {
-        const newText = el.innerText.trim();
-        if (newText !== elData.lastText) {
-          elData.lastText = newText;
+    const mo = new MutationObserver(() => {
+      const newText = getFilteredInnerText(el);
+      if (newText !== elData.lastText) {
+        // 对于 user 消息：一旦已入队（首条文本已记录），后续不再覆盖文本
+        if (elData.role === 'user' && elData.pushedToIndex) {
+          return;
+        }
+        elData.lastText = newText;
   
           
           if (elData.index != null) {
@@ -220,7 +240,7 @@
   
             const queue = indexMap[elData.index];
             if (!elData.pushedToIndex) {
-              // 初次 push
+              
               queue.push({
                 [elData.msgId]: {
                   text: elData.lastText,
@@ -229,16 +249,16 @@
                   count_num: elData.clickCount,
                   hover_count: elData.hoverCount,
                   hover_duration_ms: elData.hoverDuration,
-                  copy_count: elData.copyCount,
                   copy_details: elData.copyDetails,
                   buttons: elData.buttons
                 }
               });
               elData.pushedToIndex = true;
             } else {
-              // 更新已有 msgId
-              for (let item of queue) {
-                if (item[elData.msgId]) {
+              // 更新已有 msgId（非 user || user 未锁定时）
+              if (!(elData.role === 'user')) {
+                for (let item of queue) {
+                  if (item[elData.msgId]) {
                   item[elData.msgId] = {
                     text: elData.lastText,
                     time_stamp: elData.firstSeen.toISOString(),
@@ -246,10 +266,10 @@
                     count_num: elData.clickCount,
                     hover_count: elData.hoverCount,
                     hover_duration_ms: elData.hoverDuration,
-                    copy_count: elData.copyCount,
                     copy_details: elData.copyDetails,
                     buttons: elData.buttons
                   };
+                  }
                 }
               }
             }
@@ -294,7 +314,11 @@
   
     function tryAttachScrollListener() {
       if (!isListening) return;
-      const el = document.querySelector(scrollSelector);
+      // 优先选择匹配选择器下的可滚动 DIV（避免绑定到 nav）
+      const matches = Array.from(document.querySelectorAll(scrollSelector));
+      const divs = matches.filter(n => n && n.tagName === 'DIV');
+      let el = divs.find(n => (n.scrollHeight || 0) > (n.clientHeight || 0))
+            || divs[0]
       if (!el) return;
       if (scrollEl && scrollHandler) scrollEl.removeEventListener('scroll', scrollHandler);
   
@@ -355,8 +379,8 @@
         data.index = i + 1;
 
         // !!!初次设置 index 时，若已存在完整文本（非流式），立即 push 一条记录，防止空队列
-        if (!data.pushedToIndex && data.index != null) {
-          const currentText = el.innerText.trim();
+    if (!data.pushedToIndex && data.index != null) {
+      const currentText = getFilteredInnerText(el);
           if (currentText) {
             data.lastText = currentText;
             if (!indexMap[data.index]) indexMap[data.index] = [];
@@ -368,11 +392,11 @@
                 count_num: data.clickCount,
                 hover_count: data.hoverCount,
                 hover_duration_ms: data.hoverDuration,
-                copy_count: data.copyCount,
                 copy_details: data.copyDetails,
                 buttons: data.buttons
               }
             });
+          
             data.pushedToIndex = true;
           }
         }
@@ -489,7 +513,7 @@
   
     window.addEventListener('unload', () => { try { stopListening(); } finally { window.__COPE_EXEC_RUNNING__ = false; } });
   
-    // 注入面板（手动开始/结束）
+   
     try { injectFloatingPanel(); } catch (e) {}
   
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

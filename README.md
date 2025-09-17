@@ -45,6 +45,7 @@ In short, the plugin provides a **comprehensive log of user interactions** (clic
   Select the **dist folder** generated after the build
 
   **The plugin is now ready for debugging and usage!**
+  **CAUTION: Please refresh the webpage before clicking start to prevent local storage from affecting the monitoring process.**
 
 ---
 
@@ -54,9 +55,9 @@ The plugin collects data in structured **JSON** format. The schema is as follows
 
 ```json
 {
-  //Messages
+  
   "1": [
-    //History
+    
     {
       "msg_1757506394344_w816xn7e": {
       "id": "",
@@ -66,7 +67,6 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "count_num": 0,
       "hover_count": 0,
       "hover_duration_ms": 0,
-      "copy_count": 0,
       "copy_details": [
         {
           "text": "",
@@ -82,7 +82,7 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       ]
     }}],
 
-  ///Overall: Scroll
+
   "scroll": [
     {
       "startTime": "",
@@ -90,12 +90,12 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "startScrollTop": 0,
       "endScrollTop": 0,
       "distance": 0,
-      "edge": "", // bottom | top | none
-      "direction": "" // down | up | mixed
+      "edge": "", 
+      "direction": "" 
     }
   ],
   
-  //Overall: Button
+  
   "overallButton": [
     {
       "name": "",
