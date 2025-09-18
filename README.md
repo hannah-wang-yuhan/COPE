@@ -45,6 +45,7 @@ In short, the plugin provides a **comprehensive log of user interactions** (clic
   Select the **dist folder** generated after the build
 
   **The plugin is now ready for debugging and usage!**
+
   **CAUTION: Please refresh the webpage before clicking start to prevent local storage from affecting the monitoring process.**
 
 ---
@@ -79,7 +80,15 @@ The plugin collects data in structured **JSON** format. The schema is as follows
           "name": "",
           "timestamp": ""
         }
-      ]
+      ],
+       "navigate_details": [
+          {
+            "destination": "",
+            "start_timestamp": "",
+            "return_timestamp": "",
+            "source": "source_button || inline_link"
+          },
+       ],  
     }}],
 
 
@@ -90,8 +99,8 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "startScrollTop": 0,
       "endScrollTop": 0,
       "distance": 0,
-      "edge": "", 
-      "direction": "" 
+      "edge": "top || bottom || none", 
+      "direction": "up || down || mixed" 
     }
   ],
   

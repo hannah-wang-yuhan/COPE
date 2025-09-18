@@ -219,7 +219,9 @@
         index: null,
         msgId,
         role,
-        pushedToIndex: false
+        pushedToIndex: false,
+        navigateDetails: [],
+        pendingNavigate: null
       };
   
       observedElements.set(el, elData);
@@ -250,7 +252,8 @@
                   hover_count: elData.hoverCount,
                   hover_duration_ms: elData.hoverDuration,
                   copy_details: elData.copyDetails,
-                  buttons: elData.buttons
+                  buttons: elData.buttons,
+                  navigate_details: elData.navigateDetails
                 }
               });
               elData.pushedToIndex = true;
@@ -267,7 +270,8 @@
                     hover_count: elData.hoverCount,
                     hover_duration_ms: elData.hoverDuration,
                     copy_details: elData.copyDetails,
-                    buttons: elData.buttons
+                    buttons: elData.buttons,
+                    navigate_details: elData.navigateDetails
                   };
                   }
                 }
@@ -310,11 +314,161 @@
           elData.copyDetails.push({ text: copiedText, length: copiedText.length, timestamp: new Date().toISOString() });
         }
       });
+
+      // 导航行为监听
+      function handleLinkClick(event) {
+        const link = event.target.closest('a[href]');
+        if (!link) return;
+        
+        const href = link.href;
+        const target = link.target;
+        
+        if (target === '_blank' || (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          
+          const navigateStart = {
+            destination: href,
+            start_timestamp: new Date().toISOString(),
+            return_timestamp: null,
+            source: 'inline_link'
+          };
+          
+          elData.pendingNavigate = navigateStart;
+          elData.navigateDetails.push(navigateStart);
+          
+         
+          window.open(href, '_blank');
+          
+         
+          const handleFocus = () => {
+            if (elData.pendingNavigate && elData.pendingNavigate.destination === href) {
+              elData.pendingNavigate.return_timestamp = new Date().toISOString();
+              elData.pendingNavigate = null;
+              
+             
+              window.removeEventListener('focus', handleFocus);
+            }
+          };
+          
+          window.addEventListener('focus', handleFocus);
+          
+         
+          setTimeout(() => {
+            window.removeEventListener('focus', handleFocus);
+            if (elData.pendingNavigate && elData.pendingNavigate.destination === href) {
+              elData.pendingNavigate.return_timestamp = new Date().toISOString();
+              elData.pendingNavigate = null;
+            }
+          }, 5000);
+        }
+      }
+
+      // 监听消息元素内的链接点击
+      el.addEventListener('click', handleLinkClick, true);
+
+      // 监听source按钮点击后的链接导航
+      function handleSourceClick(event) {
+        const button = event.target.closest('button');
+        if (!button) return;
+        
+        // 检查是否为source按钮
+        const buttonText = button.innerText?.toLowerCase() || '';
+        const ariaLabel = button.getAttribute('aria-label')?.toLowerCase() || '';
+        
+        if (buttonText.includes('sources') || ariaLabel.includes('sources')) {
+          console.log('source button clicked');
+
+          setTimeout(() => {
+            const sourceSidebar = document.querySelector('div[slot="content"]');
+            console.log('source sidebar found', sourceSidebar);
+            if (!sourceSidebar) return;
+          
+            // 给 li 添加监听器
+            function attachLiListeners(li) {
+              if (!li.hasAttribute('data-cope-navigated')) {
+                li.setAttribute('data-cope-navigated', 'true');
+          
+                li.addEventListener('click', (liEvent) => {
+                  const link = li.querySelector('a[href]');
+                  if (!link) return;
+          
+                  const href = link.href;
+                  const target = link.target;
+          
+                  if (target === '_blank' || (liEvent.ctrlKey || liEvent.metaKey)) {
+                    liEvent.preventDefault();
+          
+                    const navigateStart = {
+                      destination: href,
+                      start_timestamp: new Date().toISOString(),
+                      return_timestamp: null,
+                      source: 'source_button'
+                    };
+          
+                    elData.pendingNavigate = navigateStart;
+                    elData.navigateDetails.push(navigateStart);
+          
+                   
+                    window.open(href, '_blank');
+          
+                   
+                    const handleFocus = () => {
+                      if (elData.pendingNavigate && elData.pendingNavigate.destination === href) {
+                        elData.pendingNavigate.return_timestamp = new Date().toISOString();
+                        elData.pendingNavigate = null;
+                        window.removeEventListener('focus', handleFocus);
+                      }
+                    };
+          
+                    window.addEventListener('focus', handleFocus);
+          
+                   
+                    setTimeout(() => {
+                      window.removeEventListener('focus', handleFocus);
+                      if (elData.pendingNavigate && elData.pendingNavigate.destination === href) {
+                        elData.pendingNavigate.return_timestamp = new Date().toISOString();
+                        elData.pendingNavigate = null;
+                      }
+                    }, 5000);
+                  }
+                });
+              }
+            }
+          
+           
+            sourceSidebar.querySelectorAll('li').forEach(attachLiListeners);
+          
+           
+            const observer = new MutationObserver(mutations => {
+              mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                  if (node.nodeType === 1) {
+                    if (node.tagName === 'LI') {
+                      attachLiListeners(node);
+                    } else {
+                      node.querySelectorAll?.('li').forEach(attachLiListeners);
+                    }
+                  }
+                });
+              });
+            });
+          
+            observer.observe(sourceSidebar, {
+              childList: true,
+              subtree: true
+            });
+          }, 100);
+          
+        }
+      }
+
+      // 监听source按钮点击
+      el.addEventListener('click', handleSourceClick, true);
     }
   
     function tryAttachScrollListener() {
       if (!isListening) return;
-      // 优先选择匹配选择器下的可滚动 DIV（避免绑定到 nav）
+     
       const matches = Array.from(document.querySelectorAll(scrollSelector));
       const divs = matches.filter(n => n && n.tagName === 'DIV');
       let el = divs.find(n => (n.scrollHeight || 0) > (n.clientHeight || 0))
@@ -393,7 +547,8 @@
                 hover_count: data.hoverCount,
                 hover_duration_ms: data.hoverDuration,
                 copy_details: data.copyDetails,
-                buttons: data.buttons
+                buttons: data.buttons,
+                navigate_details: data.navigateDetails
               }
             });
           
