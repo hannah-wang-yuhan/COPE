@@ -65,9 +65,13 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "role": "",
       "text": "",
       "timestamp": "",
-      "count_num": 0,
-      "hover_count": 0,
-      "hover_duration_ms": 0,
+      "count_details": ["timestamp"],
+      "hover_count": [
+        {
+            "start": "",
+            "duration": 0
+          }
+      ],
       "copy_details": [
         {
           "text": "",
@@ -100,7 +104,8 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "endScrollTop": 0,
       "distance": 0,
       "edge": "top || bottom || none", 
-      "direction": "up || down || mixed" 
+      "direction": "up || down || mixed" || "none",
+      "path": [] 
     }
   ],
   
@@ -110,5 +115,20 @@ The plugin collects data in structured **JSON** format. The schema is as follows
       "name": "",
       "timestamp": ""
     }
+  ],
+
+  "press": [
+    {
+      "startTime": "",
+      "finishTime": ""
+    }
   ]
 }
+
+
+---
+
+## 🔹 Evaluation
+
+
+

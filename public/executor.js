@@ -135,16 +135,35 @@
       closeBtn?.addEventListener("click", () => { panel.remove(); });
       roundBtn?.addEventListener("click", (ev) => {
         try {
-          if (Date.now() - lastDragEndAt < 250) { ev.preventDefault(); ev.stopPropagation(); return; }
+          if (Date.now() - lastDragEndAt < 250) { 
+            ev.preventDefault(); 
+            ev.stopPropagation(); 
+            return; 
+          }
+      
           if (!isListening) {
             startListening();
             setFinishUI();
+            pressSession = { startTime: new Date().toISOString() }; 
           } else {
-            stopListening();
+           
+            if (pressSession) {
+              pressSession.finishTime = new Date().toISOString();
+              pressEvents.push(pressSession);
+              chrome?.runtime?.sendMessage?.({ type: 'pressSession', payload: pressSession });
+              pressSession = null;
+            }
+      
+            
             setStartUI();
+            stopListening();
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error(e);
+        }
       });
+      
+      
 
       setStartUI();
     }
@@ -160,6 +179,8 @@
     let scrollHandler = null;
     let scrollEvents = [];
     let overallButtons = [];
+    let pressSession = null;
+    let pressEvents = [];
     let ignoreNextScroll = false;
     let buttonClickHandler = null;
 
@@ -210,10 +231,8 @@
         firstSeen,
         lastText: '',
         timeoutId: null,
-        clickCount: 0,
-        hoverCount: 0,
-        hoverDuration: 0,
-        hoverStartTime: null,
+        countDetail: [],    
+        hoverDetail: [],    
         copyDetails: [],
         buttons: [],
         index: null,
@@ -248,9 +267,8 @@
                   text: elData.lastText,
                   time_stamp: elData.firstSeen.toISOString(),
                   role: elData.role,
-                  count_num: elData.clickCount,
-                  hover_count: elData.hoverCount,
-                  hover_duration_ms: elData.hoverDuration,
+                  count_detail: elData.countDetail,
+                  hover_detail: elData.hoverDetail,                  
                   copy_details: elData.copyDetails,
                   buttons: elData.buttons,
                   navigate_details: elData.navigateDetails
@@ -266,9 +284,8 @@
                     text: elData.lastText,
                     time_stamp: elData.firstSeen.toISOString(),
                     role: elData.role,
-                    count_num: elData.clickCount,
-                    hover_count: elData.hoverCount,
-                    hover_duration_ms: elData.hoverDuration,
+                    count_detail: elData.countDetail,
+                    hover_detail: elData.hoverDetail,
                     copy_details: elData.copyDetails,
                     buttons: elData.buttons,
                     navigate_details: elData.navigateDetails
@@ -285,26 +302,36 @@
   
       // 点击事件
       el.addEventListener('click', () => {
-        elData.clickCount++;
+        const now = new Date().toISOString();
+        elData.countDetail.push(now);
         chrome?.runtime?.sendMessage?.({
           type: 'messageClick',
-          payload: { msgId: elData.msgId, index: elData.index, timestamp: new Date().toISOString() }
+          payload: { msgId: elData.msgId, index: elData.index, timestamp: now }
         });
       });
+      
   
       // 悬停事件
-      el.addEventListener('mouseenter', () => { elData.hoverCount++; elData.hoverStartTime = Date.now(); });
+      el.addEventListener('mouseenter', () => {
+        elData.hoverStartTime = Date.now();
+      });
+      
       el.addEventListener('mouseleave', () => {
         if (elData.hoverStartTime) {
           const duration = Date.now() - elData.hoverStartTime;
-          elData.hoverDuration += duration;
+          if (duration >= 1000) { // 只记录超过1000ms
+            const start = new Date(elData.hoverStartTime).toISOString();
+            elData.hoverDetail.push({ start, duration });
+      
+            chrome?.runtime?.sendMessage?.({
+              type: 'messageHover',
+              payload: { msgId: elData.msgId, index: elData.index, durationMs: duration, timestamp: start }
+            });
+          }
           elData.hoverStartTime = null;
-          chrome?.runtime?.sendMessage?.({
-            type: 'messageHover',
-            payload: { msgId: elData.msgId, index: elData.index, durationMs: duration, timestamp: new Date().toISOString() }
-          });
         }
       });
+      
   
       // 复制事件
       el.addEventListener('copy', () => {
@@ -468,57 +495,106 @@
   
     function tryAttachScrollListener() {
       if (!isListening) return;
-     
+
       const matches = Array.from(document.querySelectorAll(scrollSelector));
       const divs = matches.filter(n => n && n.tagName === 'DIV');
-      let el = divs.find(n => (n.scrollHeight || 0) > (n.clientHeight || 0))
-            || divs[0]
+      let el = divs.find(n => (n.scrollHeight || 0) > (n.clientHeight || 0)) || divs[0];
       if (!el) return;
+
       if (scrollEl && scrollHandler) scrollEl.removeEventListener('scroll', scrollHandler);
-  
+
       scrollEl = el;
       let session = null;
       let debounceTimer = null;
-  
+      let lastPush = [];
+      
+     
       scrollHandler = () => {
         if (ignoreNextScroll) { ignoreNextScroll = false; return; }
+      
         const scrollTop = el.scrollTop || 0;
         const scrollHeight = el.scrollHeight || 0;
         const clientHeight = el.clientHeight || 0;
         const maxScrollable = Math.max(1, scrollHeight - clientHeight);
-  
+      
         let edge = 'none';
         if (scrollTop <= 0) edge = 'top';
         else if (scrollTop >= maxScrollable - 2) edge = 'bottom';
-  
-        if (!session) session = { startTime: new Date().toISOString(), startScrollTop: scrollTop, edge, directions: new Set() };
-        else {
-          const delta = scrollTop - session.startScrollTop;
-          if (delta > 0) session.directions.add('down');
-          else if (delta < 0) session.directions.add('up');
+      
+        if (!session) {
+          session = { 
+            startTime: new Date().toISOString(), 
+            startScrollTop: scrollTop, 
+            edge, 
+            path: [] 
+          };
+        } else {
           if (edge !== 'none') session.edge = edge;
         }
-  
+      
+        const delta = scrollTop - session.startScrollTop;
+      
+        const visibleEls = Array.from(document.querySelectorAll(selector)).filter(msgEl => {
+          const rect = msgEl.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+      
+        let currentVisible = [];
+        visibleEls.forEach(msgEl => {
+          const data = observedElements.get(msgEl);
+          if (data && data.index != null) currentVisible.push(data.index);
+        });
+      
+        const newIndexes = currentVisible.filter(idx => !lastPush.includes(idx));
+      
+        if (delta > 0) newIndexes.sort((a, b) => a - b);
+        else if (delta < 0) newIndexes.sort((a, b) => b - a);
+      
+        session.path.push(...newIndexes);
+      
+        lastPush = currentVisible.slice();
+      
+        let direction = 'none';
+        if (session.path.length > 1) {
+          let isAsc = true, isDesc = true;
+          for (let i = 1; i < session.path.length; i++) {
+            if (session.path[i] > session.path[i - 1]) isDesc = false;
+            else if (session.path[i] < session.path[i - 1]) isAsc = false;
+          }
+          if (isAsc) direction = 'down';
+          else if (isDesc) direction = 'up';
+          else direction = 'mixed';
+        }
+      
+        // 防抖处理
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           if (session) {
             const endTime = new Date().toISOString();
             const endScrollTop = scrollTop;
             const distance = endScrollTop - session.startScrollTop;
-            let finalDirection;
-            if (session.directions.size === 1) finalDirection = [...session.directions][0];
-            else if (session.directions.size > 1) finalDirection = 'mixed';
-            else finalDirection = 'none';
-            const payload = { startTime: session.startTime, endTime, startScrollTop: session.startScrollTop, endScrollTop, distance, edge: session.edge, direction: finalDirection };
+            const payload = { 
+              startTime: session.startTime, 
+              endTime, 
+              startScrollTop: session.startScrollTop, 
+              endScrollTop, 
+              distance, 
+              edge: session.edge, 
+              direction, 
+              path: session.path 
+            };
             scrollEvents.push(payload);
             chrome?.runtime?.sendMessage?.({ type: 'scrollSession', payload });
             session = null;
           }
         }, 500);
       };
-  
-      el.addEventListener('scroll', scrollHandler, { passive: true });
+      
+      
+
+      el.addEventListener('scroll', scrollHandler);
     }
+
   
     function scanAndObserve() {
       if (!isListening) return;
@@ -543,9 +619,8 @@
                 text: data.lastText,
                 time_stamp: data.firstSeen.toISOString(),
                 role: data.role,
-                count_num: data.clickCount,
-                hover_count: data.hoverCount,
-                hover_duration_ms: data.hoverDuration,
+                count_detail: data.countDetail,
+                hover_detail: data.hoverDetail,
                 copy_details: data.copyDetails,
                 buttons: data.buttons,
                 navigate_details: data.navigateDetails
@@ -619,8 +694,8 @@
           const elData = observedElements.get(msgEl);
           if (!elData) return;
           const name = button.getAttribute('aria-label') || button.getAttribute('data-testid') || button.innerText?.trim() || 'unknown';
-          elData.buttons.push({ name, timestamp: new Date().toISOString() });
-          elData.clickCount++;
+          const now = new Date().toISOString();
+          elData.buttons.push({ name, timestamp: now });
 
          
           const threadBottom = document.getElementById('thread-bottom');
@@ -641,10 +716,9 @@
   
       observedElements.forEach(elData => {
         if (elData.mo) elData.mo.disconnect();
-        if (elData.hoverStartTime) elData.hoverDuration += Date.now() - elData.hoverStartTime;
       });
   
-      const result = { ...indexMap, scroll: scrollEvents.slice(), overallButton: overallButtons.slice() };
+      const result = { ...indexMap, scroll: scrollEvents.slice(), overallButton: overallButtons.slice(), press: pressEvents.slice() };
       console.log('[行为数据收集完成]', result);
   
       const jsonStr = JSON.stringify(result, null, 2);
@@ -662,7 +736,7 @@
       isListening = false;
       scrollEvents = [];
       overallButtons = [];
-  
+      pressEvents = [];
       return result;
     }
   
