@@ -190,6 +190,10 @@
     let currentPress = null;
     let ignoreNextScroll = false;
     let buttonClickHandler = null;
+    // 提升滚动状态到模块级，避免多闭包并发
+    let __copeScrollSession = null;
+    let __copeScrollDebounceTimer = null;
+    let __copeLastPush = [];
 
  
   function getFilteredInnerText(root) {
@@ -211,10 +215,19 @@
   
     function sendCapturedData(data) {
       if (chrome?.runtime?.sendMessage) {
-        chrome.runtime.sendMessage({ type: 'capturedData', payload: data });
+        try { chrome.runtime.sendMessage({ type: 'capturedData', payload: data }); } catch (_) { /* ignore */ }
       } else {
         console.warn('chrome.runtime.sendMessage 不可用，数据未发送', data);
       }
+    }
+
+    // 安全发送，避免扩展上下文失效时报错
+    function safeSend(message) {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id && typeof chrome.runtime.sendMessage === 'function') {
+          chrome.runtime.sendMessage(message);
+        }
+      } catch (_) { /* ignore */ }
     }
   
     function generateMsgId() {
@@ -366,7 +379,7 @@
           event.preventDefault();
           
           
-          const isInlineCitation = !!link.closest('div.citation.inline, .citation.inline, [class*="citation inline"]');
+          const isInlineCitation = !!link.closest('div.citation.inline, .citation.inline, [class*="citation inline"], .gap-two.flex.px-5.pb-2.pt-1');
           const isTabCitation = !!link.closest('div.citation.inline, .citation.inline, [class*="gap-sm grid"]');
 
           const navigateStart = {
@@ -419,102 +432,118 @@
       let el = divs.find(n => (n.scrollHeight || 0) > (n.clientHeight || 0)) || divs[0];
       if (!el) return;
 
-      if (scrollEl && scrollHandler) scrollEl.removeEventListener('scroll', scrollHandler);
-  
-      scrollEl = el;
-      let session = null;
-      let debounceTimer = null;
-      let lastPush = [];
+    
+	  if (scrollEl === el && el.__copeScrollHandler__) return;
       
-   
-      scrollHandler = () => {
-        if (ignoreNextScroll) { ignoreNextScroll = false; return; }
-      
-        const scrollTop = el.scrollTop || 0;
-        const scrollHeight = el.scrollHeight || 0;
-        const clientHeight = el.clientHeight || 0;
-        const maxScrollable = Math.max(1, scrollHeight - clientHeight);
-      
-        let edge = 'none';
-        if (scrollTop <= 0) edge = 'top';
-        else if (scrollTop >= maxScrollable - 2) edge = 'bottom';
-      
-        if (!session) {
-          session = { 
-            startTime: new Date().toISOString(), 
-            startScrollTop: scrollTop, 
-            edge, 
-            path: [] 
-          };
-        } else {
-          if (edge !== 'none') session.edge = edge;
-        }
-      
-        const delta = scrollTop - session.startScrollTop;
-      
-        // 获取所有可见的消息元素
-        const visibleEls = [];
-        observedElements.forEach((data, msgEl) => {
-          const rect = msgEl.getBoundingClientRect();
-          if (rect.bottom > 0 && rect.top < window.innerHeight) {
-            visibleEls.push(msgEl);
-          }
-        });
-      
-        let currentVisible = [];
-        visibleEls.forEach(msgEl => {
-          const data = observedElements.get(msgEl);
-          if (data && data.index != null) currentVisible.push(data.index);
-        });
-      
-        const newIndexes = currentVisible.filter(idx => !lastPush.includes(idx));
-      
-        if (delta > 0) newIndexes.sort((a, b) => a - b);
-        else if (delta < 0) newIndexes.sort((a, b) => b - a);
-      
-        session.path.push(...newIndexes);
-      
-        lastPush = currentVisible.slice();
-      
-        let direction = 'none';
-        if (session.path.length > 1) {
-          let isAsc = true, isDesc = true;
-          for (let i = 1; i < session.path.length; i++) {
-            if (session.path[i] > session.path[i - 1]) isDesc = false;
-            else if (session.path[i] < session.path[i - 1]) isAsc = false;
-          }
-          if (isAsc) direction = 'down';
-          else if (isDesc) direction = 'up';
-          else direction = 'mixed';
-        }
-      
-        // 防抖处理
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          if (session) {
-            const endTime = new Date().toISOString();
-            const endScrollTop = scrollTop;
-            const distance = endScrollTop - session.startScrollTop;
-            const payload = { 
-              startTime: session.startTime, 
-              endTime, 
-              startScrollTop: session.startScrollTop, 
-              endScrollTop, 
-              distance, 
-              edge: session.edge, 
-              direction, 
-              path: session.path 
-            };
-            scrollEvents.push(payload);
-            chrome?.runtime?.sendMessage?.({ type: 'scrollSession', payload });
-            session = null;
-          }
-        }, 500);
-      };
+	  if (scrollEl && scrollHandler) {
+	    try { scrollEl.removeEventListener('scroll', scrollHandler); } catch(_) {}
+	  }
+	  if (scrollEl && scrollEl.__copeScrollHandler__) {
+	    try { scrollEl.removeEventListener('scroll', scrollEl.__copeScrollHandler__); } catch(_) {}
+	    scrollEl.__copeScrollHandler__ = null;
+	  }
+	
+	  scrollEl = el;
+	  if (!Array.isArray(__copeLastPush)) __copeLastPush = [];
+	  const SIGNIFICANT_MOVE_PX = 5;
+			
+		
+		scrollHandler = () => {
+			if (ignoreNextScroll) { ignoreNextScroll = false; return; }
+		
+			const scrollTop = el.scrollTop || 0;
+			const scrollHeight = el.scrollHeight || 0;
+			const clientHeight = el.clientHeight || 0;
+			const maxScrollable = Math.max(1, scrollHeight - clientHeight);
+		
+			let edge = 'none';
+			if (scrollTop <= 0) edge = 'top';
+			else if (scrollTop >= maxScrollable - 2) edge = 'bottom';
+		
+			if (!__copeScrollSession) {
+				__copeScrollSession = { 
+					startTime: new Date().toISOString(), 
+					startScrollTop: scrollTop, 
+					edge, 
+					path: [] 
+				};
+			} else {
+				if (edge !== 'none') __copeScrollSession.edge = edge;
+			}
+		
+		const delta = scrollTop - __copeScrollSession.startScrollTop;
+		if (__copeScrollSession._lastScrollTop == null) __copeScrollSession._lastScrollTop = scrollTop;
+		const deltaSinceLast = scrollTop - __copeScrollSession._lastScrollTop;
+		__copeScrollSession._lastScrollTop = scrollTop;
+			
+			// 获取所有可见的消息元素
+			const visibleEls = [];
+			observedElements.forEach((data, msgEl) => {
+				const rect = msgEl.getBoundingClientRect();
+				if (rect.bottom > 0 && rect.top < window.innerHeight) {
+					visibleEls.push(msgEl);
+				}
+			});
+			
+			let currentVisible = [];
+			visibleEls.forEach(msgEl => {
+				const data = observedElements.get(msgEl);
+				if (data && data.index != null) currentVisible.push(data.index);
+			});
+			
+			const newIndexes = currentVisible.filter(idx => !__copeLastPush.includes(idx));
+			
+			if (delta > 0) newIndexes.sort((a, b) => a - b);
+			else if (delta < 0) newIndexes.sort((a, b) => b - a);
+			
+			__copeScrollSession.path.push(...newIndexes);
+			
+			__copeLastPush = currentVisible.slice();
+			
+			let direction = 'none';
+			if (__copeScrollSession.path.length > 1) {
+				let isAsc = true, isDesc = true;
+				for (let i = 1; i < __copeScrollSession.path.length; i++) {
+					if (__copeScrollSession.path[i] > __copeScrollSession.path[i - 1]) isDesc = false;
+					else if (__copeScrollSession.path[i] < __copeScrollSession.path[i - 1]) isAsc = false;
+				}
+				if (isAsc) direction = 'down';
+				else if (isDesc) direction = 'up';
+				else direction = 'mixed';
+			}
+			
+		// 防抖处理：仅当显著位移时才重置计时器
+		if (Math.abs(deltaSinceLast) >= SIGNIFICANT_MOVE_PX) {
+			if (__copeScrollDebounceTimer) clearTimeout(__copeScrollDebounceTimer);
+			__copeScrollDebounceTimer = setTimeout(() => {
+				if (__copeScrollSession) {
+					const endTime = new Date().toISOString();
+					const endScrollTop = scrollTop;
+					const distance = endScrollTop - __copeScrollSession.startScrollTop;
+					const payload = { 
+						startTime: __copeScrollSession.startTime, 
+						endTime, 
+						startScrollTop: __copeScrollSession.startScrollTop, 
+						endScrollTop, 
+						distance, 
+						edge: __copeScrollSession.edge, 
+						direction, 
+						path: __copeScrollSession.path 
+					};
+					console.log('[scroll segment]', payload);
+					scrollEvents.push(payload);
+					safeSend({ type: 'scrollSession', payload });
+          console.log('update scrollSession');
+					__copeScrollSession = null;
+				}
+			}, 800);
+		}
+		};
   
       
 
-      el.addEventListener('scroll', scrollHandler);
+      try { el.addEventListener('scroll', scrollHandler, { passive: true }); } catch(_) { el.addEventListener('scroll', scrollHandler); }
+      el.__copeScrollHandler__ = scrollHandler;
     }
 
   
