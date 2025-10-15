@@ -172,7 +172,7 @@
     const groupSelector = '.isolate.mx-auto.px-md';
     // 子级选择器
     const userSelector = 'div[class*="mb-xs group"]';
-    const systemSelector = 'div[class*="pb-md mx-auto"]';
+    const systemSelector = 'div[class*="py-md md"]';
     const systemButtonSelecter = 'div[class*="-mx-md px-md scrollbar"]';
     const systemRelatedSelector = 'div[class*="py-sm group"]';
     
@@ -425,9 +425,12 @@
       scrollEl = el;
       let session = null;
       let debounceTimer = null;
-      const NO_CHANGE_MS = 1000; // 当 delta 超过该时长未发生显著变化时才允许分段
-      const JITTER = 4; // 微小变化阈值（像素）
+      const NO_CHANGE_MS = 1500; // 当 delta 超过该时长未发生显著变化时才允许分段
+      const JITTER = 8; // 微小变化阈值（像素）
+      const MIN_DELTA_THRESHOLD = 5; // 最小滚动距离阈值
+      const DOM_QUERY_THROTTLE = 100; // DOM查询节流间隔（毫秒）
       let lastPush = [];
+      let lastDomQueryTime = 0;
       
   
       scrollHandler = () => {
@@ -449,49 +452,101 @@
             edge, 
             path: [],
             _lastScrollTop: scrollTop,
-            _lastDeltaValue: 0
+            _lastDeltaValue: 0,
+            distanceAcc: 0
           };
         } else {
           if (edge !== 'none') session.edge = edge;
         }
   
         const delta = scrollTop - (session._lastScrollTop ?? scrollTop);
+        
+        // 忽略过小的滚动变化
+        if (Math.abs(delta) < MIN_DELTA_THRESHOLD) {
+          return;
+        }
+        
+        session.distanceAcc += delta;
       
-        // 获取所有可见的消息元素（引入可见阈值减少闪断）
-        const visibleEls = [];
-        const visibilityThreshold = Math.min(120, Math.max(30, Math.floor(window.innerHeight * 0.05))); // 适度放宽，5%视口，30-120px
-        observedElements.forEach((data, msgEl) => {
-          const rect = msgEl.getBoundingClientRect();
-          const overlap = Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top);
-          if (overlap > visibilityThreshold) {
-            visibleEls.push(msgEl);
-          }
-        });
+        // 节流DOM查询，减少性能开销
+        const now = Date.now();
+        let currentVisible = lastPush.slice(); // 默认使用上次的结果
+        
+        if (now - lastDomQueryTime > DOM_QUERY_THROTTLE) {
+          // 获取所有可见的消息元素
+          const visibleEls = [];
+          const visibilityThreshold = Math.min(120, Math.max(30, Math.floor(window.innerHeight * 0.05)));
+          observedElements.forEach((data, msgEl) => {
+            const rect = msgEl.getBoundingClientRect();
+            const overlap = Math.min(window.innerHeight, rect.bottom) - Math.max(0, rect.top);
+            if (overlap > visibilityThreshold) {
+              visibleEls.push(msgEl);
+            }
+          });
+        
+          currentVisible = [];
+          visibleEls.forEach(msgEl => {
+            const data = observedElements.get(msgEl);
+            if (data && data.index != null) currentVisible.push(data.index);
+          });
+          
+          lastDomQueryTime = now;
+        }
       
-        let currentVisible = [];
-        visibleEls.forEach(msgEl => {
-          const data = observedElements.get(msgEl);
-          if (data && data.index != null) currentVisible.push(data.index);
-        });
-      
+        // 路径构建新方法
         const newIndexes = currentVisible.filter(idx => !lastPush.includes(idx));
-      
-        if (delta > 0) newIndexes.sort((a, b) => a - b);
-        else if (delta < 0) newIndexes.sort((a, b) => b - a);
-      
-        // 仅记录奇数 query（1-based 奇数索引）
-        // 若未分配索引（可能因为元素刚出现），跳过本次，防止记录空/错序
-        const oddOnly = newIndexes.filter(idx => Number.isFinite(idx) && (idx % 2) === 1);
-        if (oddOnly.length > 0) {
-          session.path.push(...oddOnly);
+        
+        // 先确定当前滚动方向
+        let currentDirection = 'none';
+        if (delta > MIN_DELTA_THRESHOLD) currentDirection = 'down';
+        else if (delta < -MIN_DELTA_THRESHOLD) currentDirection = 'up';
+        
+        // (1) invisiblemessage列表：记录屏幕上现有的index
+        const invisibleMessageList = [...currentVisible];
+        
+        // (2) 根据方向，把invisible列表里的msg按顺序/倒序加入pathmessage列表
+        let pathMessageList = [];
+        if (currentDirection === 'up') {
+          // 向上滚动：倒序排列
+          pathMessageList = [...invisibleMessageList].sort((a, b) => b - a);
+        } else if (currentDirection === 'down') {
+          // 向下滚动：升序排列
+          pathMessageList = [...invisibleMessageList].sort((a, b) => a - b);
+        } else {
+          // 无明确方向时保持原顺序
+          pathMessageList = [...invisibleMessageList];
+        }
+        
+        // 将排序后的现有消息加入path（如果还没有记录过）
+        const existingToAdd = pathMessageList.filter(idx => !session.path.includes(idx));
+        if (existingToAdd.length > 0) {
+          console.log('[滚动路径] 添加现有消息:', existingToAdd, '当前方向:', currentDirection);
+          session.path.push(...existingToAdd);
+        }
+        
+        // (3) 把新出现的msg加入到队尾（注意去重）
+        const validNewIndexes = newIndexes.filter(idx => Number.isFinite(idx));
+        if (validNewIndexes.length > 0) {
+          // 获取排序后的最后一个index
+          const lastSortedIndex = pathMessageList.length > 0 ? pathMessageList[pathMessageList.length - 1] : null;
+          
+          // 过滤掉与最后一个排序index相同的新index
+          const newIndexesToAdd = validNewIndexes.filter(idx => idx !== lastSortedIndex);
+          
+          if (newIndexesToAdd.length > 0) {
+            console.log('[滚动路径] 添加新消息到队尾:', newIndexesToAdd, '当前方向:', currentDirection, '过滤掉的重复index:', validNewIndexes.filter(idx => idx === lastSortedIndex));
+            session.path.push(...newIndexesToAdd);
+          } else if (validNewIndexes.length > 0) {
+            console.log('[滚动路径] 跳过重复的新消息:', validNewIndexes, '与最后排序index相同:', lastSortedIndex);
+          }
         }
       
         lastPush = currentVisible.slice();
       
-        // 方向推断优先使用即时 delta，其次回退到 path 形态
+        // 方向推断 - 使用更稳定的阈值
         let direction = 'none';
-        if (delta > 2) direction = 'down';
-        else if (delta < -2) direction = 'up';
+        if (delta > MIN_DELTA_THRESHOLD) direction = 'down';
+        else if (delta < -MIN_DELTA_THRESHOLD) direction = 'up';
         else if (session.path.length > 1) {
           let isAsc = true, isDesc = true;
           for (let i = 1; i < session.path.length; i++) {
@@ -503,7 +558,7 @@
           else direction = 'mixed';
         }
       
-        // 当 delta 发生显著变化（相对上次 delta 的变化量超出 JITTER）时，刷新分段计时器
+        // 当 delta 发生显著变化时，刷新分段计时器
         const lastDelta = session._lastDeltaValue ?? 0;
         const deltaChanged = Math.abs(delta - lastDelta) > JITTER;
         if (deltaChanged) {
@@ -513,17 +568,18 @@
           if (session) {
             const endTime = new Date().toISOString();
             const endScrollTop = scrollTop;
-            const distance = endScrollTop - session.startScrollTop;
-              const payload = { 
-                startTime: session.startTime, 
-                endTime, 
-                startScrollTop: session.startScrollTop, 
-                endScrollTop, 
-                distance, 
-                edge: session.edge, 
-                direction, 
-                path: session.path 
-              };
+            
+            const payload = { 
+              startTime: session.startTime, 
+              endTime, 
+              startScrollTop: session.startScrollTop, 
+              endScrollTop, 
+              distance: session.distanceAcc,
+              edge: session.edge, 
+              direction, 
+              path: session.path
+            };
+            console.log('[滚动事件] 完成:', payload);
             scrollEvents.push(payload);
             chrome?.runtime?.sendMessage?.({ type: 'scrollSession', payload });
             session = null;
